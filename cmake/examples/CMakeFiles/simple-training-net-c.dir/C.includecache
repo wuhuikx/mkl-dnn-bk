@@ -1,0 +1,32 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../include/mkldnn.h
+mkldnn_types.h
+../include/mkldnn_types.h
+
+../include/mkldnn_types.h
+stddef.h
+-
+stdint.h
+-
+
+/home/wuhui/mkl-dnn/examples/simple_training_net.c
+string.h
+-
+stdio.h
+-
+stdlib.h
+-
+math.h
+-
+mkldnn.h
+/home/wuhui/mkl-dnn/examples/mkldnn.h
+malloc.h
+-
+

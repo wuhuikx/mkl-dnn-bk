@@ -1,0 +1,35 @@
+# CMake generated Testfile for 
+# Source directory: /home/wuhui/mkl-dnn/tests/gtests
+# Build directory: /home/wuhui/mkl-dnn/cmake/tests/gtests
+# 
+# This file includes the relevant testing commands required for 
+# testing this directory and lists subdirectories to be tested as well.
+add_test(test_iface_pd_iter "test_iface_pd_iter")
+add_test(test_iface_attr "test_iface_attr")
+add_test(test_sum "test_sum")
+add_test(test_reorder "test_reorder")
+add_test(test_concat "test_concat")
+add_test(test_softmax_forward "test_softmax_forward")
+add_test(test_eltwise "test_eltwise")
+add_test(test_relu "test_relu")
+add_test(test_lrn_forward "test_lrn_forward")
+add_test(test_lrn_backward "test_lrn_backward")
+add_test(test_pooling_forward "test_pooling_forward")
+add_test(test_pooling_backward "test_pooling_backward")
+add_test(test_batch_normalization "test_batch_normalization")
+add_test(test_inner_product_forward "test_inner_product_forward")
+add_test(test_inner_product_backward_data "test_inner_product_backward_data")
+add_test(test_inner_product_backward_weights "test_inner_product_backward_weights")
+add_test(test_convolution_format_any "test_convolution_format_any")
+add_test(test_convolution_forward_f32 "test_convolution_forward_f32")
+add_test(test_convolution_forward_s16s16s32 "test_convolution_forward_s16s16s32")
+add_test(test_convolution_forward_u8s8s32 "test_convolution_forward_u8s8s32")
+add_test(test_convolution_forward_u8s8fp "test_convolution_forward_u8s8fp")
+add_test(test_convolution_relu_forward_f32 "test_convolution_relu_forward_f32")
+add_test(test_convolution_relu_forward_s16s16s32 "test_convolution_relu_forward_s16s16s32")
+add_test(test_convolution_relu_forward_u8s8s32 "test_convolution_relu_forward_u8s8s32")
+add_test(test_convolution_relu_forward_fp32_discrete "test_convolution_relu_forward_fp32_discrete")
+add_test(test_convolution_relu_forward_u8s8s32_discrete "test_convolution_relu_forward_u8s8s32_discrete")
+add_test(test_convolution_backward_data_f32 "test_convolution_backward_data_f32")
+add_test(test_convolution_backward_data_s16s16s32 "test_convolution_backward_data_s16s16s32")
+subdirs(gtest)

@@ -1,0 +1,7 @@
+# Hashes of file build rules.
+4862a80c9e85be1c06ac45e17b361645 CMakeFiles/doc
+afe71256cbb6190c6690d5a963fc705b doc.stamp
+8e7d836140b1ab837ef24c7bd72b9701 tests/benchdnn/CMakeFiles/test_benchdnn_other
+e31215d9b713817a7814dfda2d726abc tests/benchdnn/CMakeFiles/test_conv
+fd022843c0e4f573313fc564b68e4d0f tests/benchdnn/CMakeFiles/test_conv_regression
+c723d04e37e06fb9b81193e08876c15e tests/test_c_symbols.c

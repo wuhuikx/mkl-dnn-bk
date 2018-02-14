@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../include/mkldnn.h
+mkldnn_types.h
+../include/mkldnn_types.h
+
+../include/mkldnn_types.h
+stddef.h
+-
+stdint.h
+-
+
+/home/wuhui/mkl-dnn/cmake/tests/test_c_symbols.c
+mkldnn.h
+/home/wuhui/mkl-dnn/cmake/tests/mkldnn.h
+

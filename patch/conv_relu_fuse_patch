@@ -1,0 +1,433 @@
+diff --git a/cmake/platform.cmake b/cmake/platform.cmake
+index e9e821a..3ab4f6c 100644
+--- a/cmake/platform.cmake
++++ b/cmake/platform.cmake
+@@ -26,6 +26,7 @@ add_definitions(-DMKLDNN_DLL -DMKLDNN_DLL_EXPORTS)
+ # UNIT8_MAX-like macros are a part of the C99 standard and not a part of the
+ # C++ standard (see C99 standard 7.18.2 and 7.18.4)
+ add_definitions(-D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS)
++add_definitions(-DVNNI_ENABLE)
+ 
+ set(CMAKE_CCXX_FLAGS)
+ set(DEF_ARCH_OPT_FLAGS)
+@@ -46,7 +47,7 @@ if(WIN32)
+     set(CTESTCONFIG_PATH "$ENV{PATH}")
+     string(REPLACE ";" "\;" CTESTCONFIG_PATH "${CTESTCONFIG_PATH}")
+ elseif(UNIX OR APPLE)
+-    set(CMAKE_CCXX_FLAGS "${CMAKE_CCXX_FLAGS} -Wall -Werror -Wno-unknown-pragmas")
++    set(CMAKE_CCXX_FLAGS "${CMAKE_CCXX_FLAGS}  -Wall -Wno-unknown-pragmas -Wno-unused-but-set-variable -Wno-unused-variable -Werror -mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq -mavx512vnni")
+     set(CMAKE_CCXX_FLAGS "${CMAKE_CCXX_FLAGS} -fvisibility=internal")
+     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fvisibility-inlines-hidden")
+diff --git a/src/common/primitive_iterator.cpp b/src/common/primitive_iterator.cpp
+index 4aa1e02..e0718e8 100644
+--- a/src/common/primitive_iterator.cpp
++++ b/src/common/primitive_iterator.cpp
+@@ -52,7 +52,10 @@ struct mkldnn_primitive_desc_iterator: public c_compatible {
+         while (++idx_ != last_idx_) {
+             auto s = impl_list_[idx_](&pd_, op_desc_, &attr_, engine_,
+                     hint_fwd_pd_);
+-            if (s == success) break;
++            if (s == success) 
++	    { //printf("idx = %d\n", idx_); 
++	      break;
++            }
+         }
+         return *this;
+     }
+diff --git a/src/cpu/cpu_engine.cpp b/src/cpu/cpu_engine.cpp
+index ebe0961..0b7e305 100644
+--- a/src/cpu/cpu_engine.cpp
++++ b/src/cpu/cpu_engine.cpp
+@@ -80,9 +80,9 @@ using namespace mkldnn::impl::data_type;
+ #define INSTANCE(...) &primitive_desc_t::create<__VA_ARGS__::pd_t>
+ static const pd_create_f cpu_impl_list[] = {
+     /* conv */
+-    INSTANCE(jit_avx512_common_1x1_convolution_fwd_f32_t),
+-    INSTANCE(jit_avx512_common_1x1_convolution_bwd_data_f32_t),
+-    INSTANCE(jit_avx512_common_1x1_convolution_bwd_weights_t),
++    INSTANCE(jit_avx512_common_1x1_convolution_fwd_f32_t),      //0
++    INSTANCE(jit_avx512_common_1x1_convolution_bwd_data_f32_t), //1
++    INSTANCE(jit_avx512_common_1x1_convolution_bwd_weights_t),  //2
+     INSTANCE(jit_avx512_common_1x1_convolution_fwd_s16s16s32_t),
+     INSTANCE(jit_avx512_common_1x1_convolution_bwd_data_s16s16s32_t),
+     INSTANCE(jit_avx512_common_convolution_winograd_fwd_t),
+@@ -110,9 +110,9 @@ static const pd_create_f cpu_impl_list[] = {
+     INSTANCE(jit_avx2_gemm_convolution_bwd_weights_t),
+     INSTANCE(ref_convolution_fwd_t<f32>),
+     INSTANCE(ref_convolution_bwd_data_t<f32, f32, f32, f32>),
+-    INSTANCE(ref_convolution_bwd_weights_t<f32, f32, f32, f32>),
++    INSTANCE(ref_convolution_bwd_weights_t<f32, f32, f32, f32>),  //30
+     /* conv (int) */
+-    INSTANCE(jit_avx512_common_convolution_fwd_t<s16, s16, s32>),
++    INSTANCE(jit_avx512_common_convolution_fwd_t<s16, s16, s32>), //31
+     INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<false, f32>),
+     INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<false, s32>),
+     INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<false, s8>),
+@@ -127,27 +127,27 @@ static const pd_create_f cpu_impl_list[] = {
+     INSTANCE(ref_convolution_fwd_t<u8, s8, s8, s32>),
+     INSTANCE(ref_convolution_fwd_t<u8, s8, u8, s32>),
+     INSTANCE(ref_convolution_bwd_data_t<s32, s16, s16, s32>),
+-    INSTANCE(ref_convolution_bwd_weights_t<s16, s32, s16, s32>),
++    INSTANCE(ref_convolution_bwd_weights_t<s16, s32, s16, s32>), //46
+     /* eltwise */
+-    INSTANCE(jit_uni_eltwise_fwd_t<avx512_common>),
++    INSTANCE(jit_uni_eltwise_fwd_t<avx512_common>),  //47
+     INSTANCE(jit_uni_eltwise_bwd_t<avx512_common>),
+     INSTANCE(jit_uni_eltwise_fwd_t<avx2>),
+     INSTANCE(jit_uni_eltwise_bwd_t<avx2>),
+     INSTANCE(jit_uni_eltwise_fwd_t<sse42>),
+     INSTANCE(jit_uni_eltwise_bwd_t<sse42>),
+     INSTANCE(ref_eltwise_fwd_t<f32>),
+-    INSTANCE(ref_eltwise_bwd_t<f32>),
++    INSTANCE(ref_eltwise_bwd_t<f32>),  //
+     /* eltwise (int) */
+-    INSTANCE(ref_eltwise_fwd_t<s32>),
++    INSTANCE(ref_eltwise_fwd_t<s32>),  //55
+     INSTANCE(ref_eltwise_fwd_t<s16>),
+     INSTANCE(ref_eltwise_fwd_t<s8>),
+     INSTANCE(ref_eltwise_fwd_t<u8>),
+     INSTANCE(ref_eltwise_bwd_t<s32>),
+-    INSTANCE(ref_eltwise_bwd_t<s16>),
++    INSTANCE(ref_eltwise_bwd_t<s16>), //60
+     /* softmax */
+-    INSTANCE(ref_softmax_fwd_t<f32>),
++    INSTANCE(ref_softmax_fwd_t<f32>),  //61
+     /* pool */
+-    INSTANCE(jit_uni_pooling_fwd_t<avx512_common>),
++    INSTANCE(jit_uni_pooling_fwd_t<avx512_common>), //62
+     INSTANCE(jit_uni_pooling_bwd_t<avx512_common>),
+     INSTANCE(jit_uni_pooling_fwd_t<avx2>),
+     INSTANCE(jit_uni_pooling_bwd_t<avx2>),
+@@ -156,33 +156,33 @@ static const pd_create_f cpu_impl_list[] = {
+     INSTANCE(nchw_pooling_fwd_t<f32>),
+     INSTANCE(nchw_pooling_bwd_t<f32>),
+     INSTANCE(ref_pooling_fwd_t<f32>),
+-    INSTANCE(ref_pooling_bwd_t<f32>),
++    INSTANCE(ref_pooling_bwd_t<f32>),  //71
+     /* pool (int) */
+-    INSTANCE(jit_avx512_core_i8i8_pooling_fwd_t),
++    INSTANCE(jit_avx512_core_i8i8_pooling_fwd_t),  //72
+     INSTANCE(ref_pooling_fwd_t<s32>),
+     INSTANCE(ref_pooling_fwd_t<s16, s32>),
+     INSTANCE(ref_pooling_fwd_t<s8, s32>),
+     INSTANCE(ref_pooling_fwd_t<u8, s32>),
+     INSTANCE(ref_pooling_bwd_t<s32>),
+-    INSTANCE(ref_pooling_bwd_t<s16, s32>),
++    INSTANCE(ref_pooling_bwd_t<s16, s32>),  //78
+     /* lrn */
+-    INSTANCE(jit_avx512_common_lrn_fwd_t),
++    INSTANCE(jit_avx512_common_lrn_fwd_t),  //79
+     INSTANCE(jit_avx512_common_lrn_bwd_t),
+     INSTANCE(jit_uni_lrn_fwd_t<avx2>),
+     INSTANCE(jit_uni_lrn_bwd_t<avx2>),
+     INSTANCE(jit_uni_lrn_fwd_t<sse42>),
+     INSTANCE(ref_lrn_fwd_t<f32>),
+-    INSTANCE(ref_lrn_bwd_t<f32>),
++    INSTANCE(ref_lrn_bwd_t<f32>),  //85
+     /* batch normalization */
+-    INSTANCE(jit_uni_batch_normalization_fwd_t<avx512_common>),
++    INSTANCE(jit_uni_batch_normalization_fwd_t<avx512_common>),  //86
+     INSTANCE(jit_uni_batch_normalization_bwd_t<avx512_common>),
+     INSTANCE(jit_uni_batch_normalization_fwd_t<avx2>),
+     INSTANCE(jit_uni_batch_normalization_bwd_t<avx2>),
+     INSTANCE(jit_uni_batch_normalization_fwd_t<sse42>),
+     INSTANCE(ref_batch_normalization_fwd_t<f32>),
+-    INSTANCE(ref_batch_normalization_bwd_t<f32>),
++    INSTANCE(ref_batch_normalization_bwd_t<f32>),  //92
+     /* inner product */
+-    INSTANCE(gemm_inner_product_fwd_t<f32>),
++    INSTANCE(gemm_inner_product_fwd_t<f32>),  //93
+     INSTANCE(gemm_inner_product_bwd_data_t<f32>),
+     INSTANCE(gemm_inner_product_bwd_weights_t<f32>),
+     INSTANCE(jit_uni_inner_product_fwd_t<avx512_common>),
+@@ -193,27 +193,27 @@ static const pd_create_f cpu_impl_list[] = {
+     INSTANCE(jit_uni_inner_product_bwd_data_t<avx2>),
+     INSTANCE(ref_inner_product_fwd_t<f32>),
+     INSTANCE(ref_inner_product_bwd_data_t<f32, f32, f32, f32>),
+-    INSTANCE(ref_inner_product_bwd_weights_t<f32>),
++    INSTANCE(ref_inner_product_bwd_weights_t<f32>),  //104
+     /* inner product (int) */
+-    INSTANCE(ref_inner_product_fwd_t<s16, s16, s32, s32>),
++    INSTANCE(ref_inner_product_fwd_t<s16, s16, s32, s32>),  //105
+     INSTANCE(ref_inner_product_bwd_data_t<s32, s16, s16, s32>),
+-    INSTANCE(ref_inner_product_fwd_t<u8, s8, u8, s32>),
++    INSTANCE(ref_inner_product_fwd_t<u8, s8, u8, s32>), //107
+     /* conv_eltwise */
+-    INSTANCE(jit_avx512_common_convolution_winograd_relu_t),
++    INSTANCE(jit_avx512_common_convolution_winograd_relu_t), //108
+     INSTANCE(jit_avx512_common_1x1_convolution_relu_f32_t),
+-    INSTANCE(jit_avx512_common_1x1_convolution_relu_s16s16s32_t),
++    INSTANCE(jit_avx512_common_1x1_convolution_relu_s16s16s32_t),  //110
+     INSTANCE(jit_avx512_common_convolution_relu_t<f32>),
+-    INSTANCE(jit_avx2_1x1_convolution_relu_t),
++    INSTANCE(jit_avx2_1x1_convolution_relu_t),  //112
+     INSTANCE(jit_sse42_1x1_convolution_relu_t),
+     INSTANCE(jit_avx2_convolution_relu_t),
+     INSTANCE(jit_sse42_convolution_relu_t),
+     INSTANCE(mkl_gemm_convolution_relu_t),
+     INSTANCE(jit_avx512_common_gemm_convolution_relu_t),
+     INSTANCE(jit_avx2_gemm_convolution_relu_t),
+-    INSTANCE(ref_convolution_relu_t<f32>),
++    INSTANCE(ref_convolution_relu_t<f32>),  //119
+     /* conv_eltwise (int) */
+-    INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<true, f32>),
+-    INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<true, s32>),
++    INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<true, f32>), //120
++    INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<true, s32>), //121
+     INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<true, s8>),
+     INSTANCE(_jit_avx512_core_u8s8s32x_convolution_fwd_t<true, u8>),
+     INSTANCE(jit_avx512_common_convolution_relu_t<s16, s16, s32>),
+@@ -224,7 +224,7 @@ static const pd_create_f cpu_impl_list[] = {
+     INSTANCE(ref_convolution_relu_t<s16, s16, s32, s32>),
+     INSTANCE(ref_convolution_relu_t<u8, s8, s32, s32>),
+     INSTANCE(ref_convolution_relu_t<u8, s8, s8, s32>),
+-    INSTANCE(ref_convolution_relu_t<u8, s8, u8, s32>),
++    INSTANCE(ref_convolution_relu_t<u8, s8, u8, s32>), //132
+     /* eol */
+     nullptr,
+ };
+diff --git a/src/cpu/jit_avx512_common_convolution.cpp b/src/cpu/jit_avx512_common_convolution.cpp
+index 636567c..8f91588 100644
+--- a/src/cpu/jit_avx512_common_convolution.cpp
++++ b/src/cpu/jit_avx512_common_convolution.cpp
+@@ -156,7 +156,7 @@ void _jit_avx512_common_convolution_fwd_t
+                     assert(!"unsupported loop order");
+             }
+         }
+-
++	
+         jit_conv_ker_pipeline(kernel_->jit_ker, par_conv,
+                 src, dst, weights, bias, 0, 0);
+     }
+diff --git a/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp b/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp
+index a660f20..3cc40dc 100644
+--- a/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp
++++ b/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp
+@@ -24,7 +24,7 @@
+ #include "jit_generator.hpp"
+ 
+ #include "jit_avx512_core_u8s8s32x_convolution.hpp"
+-
++#include <immintrin.h> 
+ namespace mkldnn {
+ namespace impl {
+ namespace cpu {
+@@ -351,6 +351,9 @@ int jit_avx512_core_u8s8s32x_conv_fwd_ker_t::get_src_index(int ow_i) {
+ 
+ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute(
+                                Zmm vreg_acc, Zmm vreg_wei, Zmm vreg_src) {
++#ifdef VNNI_ENABLE
++        vpdpbusd(vreg_acc, vreg_src, vreg_wei);
++#else
+         Zmm vreg_t_s16 = vreg_tmp;
+         Zmm vreg_t_s32 = vreg_tmp;
+ 
+@@ -361,8 +364,8 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute(
+         // [1o, 1o, ..., 1o] (16) <-- o + u
+         vpaddd(vreg_acc, vreg_acc, vreg_t_s32);
+ 
++#endif
+ }
+-
+ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t
+     ::compute_part_ur_ow_oc_block_expl_bcast_large_spatial(
+         int ur_ow, int iw_start) {
+@@ -829,6 +832,7 @@ execute_forward() {
+      *   \______drv_______/\_______________________ker_______________________/
+      */
+ 
++
+     auto ker = [&](int ithr, int nthr) {
+         const int work_amount = c.mb * c.ngroups * c.oh * c.oc_nb1;
+ 
+diff --git a/src/cpu/jit_transpose_src_utils.cpp b/src/cpu/jit_transpose_src_utils.cpp
+index b941e6d..089a12f 100644
+--- a/src/cpu/jit_transpose_src_utils.cpp
++++ b/src/cpu/jit_transpose_src_utils.cpp
+@@ -347,7 +347,7 @@ void jit_trans_iw_x4_4x_t::generate() {
+         0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, };
+ 
+     const auto &c = *conf_;
+-    const int simd_w = cpu_isa_traits<avx512_common>::vlen / typesize;
++    int simd_w = cpu_isa_traits<avx512_common>::vlen / typesize;
+     const int niters = c.tr_ld / simd_w;
+ 
+     assert(niters <= 4); /* [bwd_w:tr_src:r1] */
+diff --git a/src/cpu/jit_uni_eltwise.cpp b/src/cpu/jit_uni_eltwise.cpp
+index 04f9d79..b6508ab 100644
+--- a/src/cpu/jit_uni_eltwise.cpp
++++ b/src/cpu/jit_uni_eltwise.cpp
+@@ -407,6 +407,7 @@ private:
+         uni_vminps(vmm_src, vmm_src, ptr[imm_addr64 + 10 * vlen]);
+         uni_vmaxps(vmm_src, vmm_src, ptr[imm_addr64 + 11 * vlen]);
+         uni_vmovups(Vmm(8), vmm_src);
++
+         // calculate exp(x)
+         // fx = x * log2ef + 0.5
+         uni_vmulps(vmm_src, vmm_src, ptr[imm_addr64 + 2 * vlen]);
+@@ -971,6 +972,7 @@ jit_uni_eltwise_fwd_t<isa>::jit_uni_eltwise_fwd_t(const pd_t *pd,
+         kernel_ = new jit_uni_relu_kernel_f32<isa>(desc); break;
+     default:
+         kernel_ = new jit_uni_kernel_fwd_f32<isa>(desc);
++        //printf("this is elw_relu_fp32_2");
+     }
+ }
+ 
+@@ -980,6 +982,7 @@ jit_uni_eltwise_fwd_t<isa>::~jit_uni_eltwise_fwd_t()
+ 
+ template <cpu_isa_t isa>
+ void jit_uni_eltwise_fwd_t<isa>::execute_forward() {
++        //printf("this is elw_relu_fp32_3");
+     auto src = reinterpret_cast<const data_t *>(this->input_memory(0));
+     auto dst = reinterpret_cast<data_t *>(this->memory(0));
+ 
+diff --git a/src/cpu/xbyak/xbyak_mnemonic.h b/src/cpu/xbyak/xbyak_mnemonic.h
+index 318af32..9fa2a43 100644
+--- a/src/cpu/xbyak/xbyak_mnemonic.h
++++ b/src/cpu/xbyak/xbyak_mnemonic.h
+@@ -1951,6 +1951,10 @@ void vshuff32x4(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { op
+ void vshuff64x2(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { opAVX_X_X_XM(y1, y2, op, T_66 | T_0F3A | T_YMM | T_MUST_EVEX | T_EW1 | T_B64, 0x23, imm); }
+ void vshufi32x4(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { opAVX_X_X_XM(y1, y2, op, T_66 | T_0F3A | T_YMM | T_MUST_EVEX | T_EW0 | T_B32, 0x43, imm); }
+ void vshufi64x2(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { opAVX_X_X_XM(y1, y2, op, T_66 | T_0F3A | T_YMM | T_MUST_EVEX | T_EW1 | T_B64, 0x43, imm); }
++void vpdpbusd(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x50); }
++void vpdpbusds(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x51); }
++void vpdpwssd(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x52); }
++void vpdpwssds(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x53); }
+ #ifdef XBYAK64
+ void kmovq(const Opmask& k, const Reg64& r) { opVex(k, 0, r, T_L0 | T_0F | T_F2 | T_W1, 0x92); }
+ void kmovq(const Reg64& r, const Opmask& k) { opVex(r, 0, k, T_L0 | T_0F | T_F2 | T_W1, 0x93); }
+diff --git a/tests/gtests/CMakeLists.txt b/tests/gtests/CMakeLists.txt
+index 6259fe0..80a32c5 100644
+--- a/tests/gtests/CMakeLists.txt
++++ b/tests/gtests/CMakeLists.txt
+@@ -50,9 +50,11 @@ file(GLOB PRIM_TEST_CASES_SRC
+                               test_convolution_forward_u8s8fp.cpp
+                               test_convolution_relu_forward_f32.cpp
+                               test_convolution_relu_forward_s16s16s32.cpp
+-                              test_convolution_backward_data_f32.cpp
++			      test_convolution_backward_data_f32.cpp
+                               test_convolution_backward_data_s16s16s32.cpp
+                               test_convolution_backward_weights.cpp
++                              test_convolution_relu_forward_u8s8s32.cpp
++                              test_convolution_relu_forward_u8s8s32_discrete.cpp
+                               ) #temporary
+ 
+ foreach(TEST_FILE ${PRIM_TEST_CASES_SRC})
+diff --git a/tests/gtests/convolution_common.h b/tests/gtests/convolution_common.h
+index 27f61fc..de5d6eb 100644
+--- a/tests/gtests/convolution_common.h
++++ b/tests/gtests/convolution_common.h
+@@ -93,11 +93,12 @@
+     {mkldnn::round_mode, scale, test_convolution_attr_t::scale_t::policy}, \
+     {__VA_ARGS__} }
+ 
+-#ifdef TEST_PARAM_ATTR
+-#include "convolution_attr.h"
+-#else
+-#include "convolution_simple_small.h"
+-#endif
++//#ifdef TEST_PARAM_ATTR
++#include "convolution_attr_u8s8s32x.h"
++//#include "convolution_attr.h"
++//#else
++//#include "convolution_simple_small.h"
++//#endif
+ //#include "convolution_alexnet.h"
+ //#include "convolution_googlenet_v1.h"
+ //#include "convolution_googlenet_v2.h"
+diff --git a/tests/gtests/gtest/src/gtest.cc b/tests/gtests/gtest/src/gtest.cc
+index d391f68..9e1a3da 100644
+--- a/tests/gtests/gtest/src/gtest.cc
++++ b/tests/gtests/gtest/src/gtest.cc
+@@ -2640,7 +2640,6 @@ void TestInfo::Run() {
+   repeater->OnTestStart(*this);
+ 
+   const TimeInMillis start = internal::GetTimeInMillis();
+-
+   impl->os_stack_trace_getter()->UponLeavingGTest();
+ 
+   // Creates the test object.
+diff --git a/tests/gtests/main.cpp b/tests/gtests/main.cpp
+index 73061ab..8624b8f 100644
+--- a/tests/gtests/main.cpp
++++ b/tests/gtests/main.cpp
+@@ -30,8 +30,13 @@ int main( int argc, char* argv[ ] )
+         // Get first snapshot.
+         system("where /q umdh && umdh -pn:tests.exe -f:pre_cpu.txt");
+ #endif
+-
+-        result = RUN_ALL_TESTS();
++	for (int i = 1; i < 11; ++i)
++       	     {
++		printf("%d test", i);
++		result = RUN_ALL_TESTS();
++		
++		}
++	     
+     }
+ 
+ #if _WIN32
+@@ -47,4 +52,4 @@ int main( int argc, char* argv[ ] )
+ #endif
+ 
+     return result;
+-}
+\ No newline at end of file
++}
+diff --git a/tests/gtests/test_convolution_forward_common.hpp b/tests/gtests/test_convolution_forward_common.hpp
+index 9667df9..2d1d12f 100644
+--- a/tests/gtests/test_convolution_forward_common.hpp
++++ b/tests/gtests/test_convolution_forward_common.hpp
+@@ -23,6 +23,7 @@
+ #include <stdint.h>
+ 
+ #include <math.h>
++#include <sys/time.h>
+ 
+ namespace mkldnn {
+ 
+@@ -214,7 +215,14 @@ protected:
+             std::vector<primitive> pipeline;
+             pipeline.push_back(conv);
+             auto s = stream(stream::kind::lazy);
++            
++            struct timeval I_start, I_end;
++            gettimeofday(&I_start, NULL);
+             s.submit(pipeline).wait();
++	    gettimeofday(&I_end, NULL);
++            double I_total = (I_end.tv_sec - I_start.tv_sec) + (I_end.tv_usec - I_start.tv_usec) / 1000000.0;
++            printf("The pause used %f ms by clock()\n", I_total * 1000);
++
+ 
+             auto ref_memory = memory(memory::primitive_desc(c_dst_desc, eng),
+                     ref_dst_data);
+diff --git a/tests/gtests/test_convolution_relu_forward_common.hpp b/tests/gtests/test_convolution_relu_forward_common.hpp
+index 18c7e51..0a4e76a 100644
+--- a/tests/gtests/test_convolution_relu_forward_common.hpp
++++ b/tests/gtests/test_convolution_relu_forward_common.hpp
+@@ -18,6 +18,8 @@
+ #include "gtest/gtest.h"
+ 
+ #include "mkldnn.hpp"
++#include <sys/time.h>
++
+ 
+ namespace mkldnn {
+ 
+@@ -186,7 +188,14 @@ protected:
+         std::vector<primitive> pipeline;
+         pipeline.push_back(conv);
+ 
+-        stream(stream::kind::lazy).submit(pipeline).wait();
++         struct timeval I_start, I_end;
++         gettimeofday(&I_start, NULL);
++         stream(stream::kind::eager).submit(pipeline).wait();
++         gettimeofday(&I_end, NULL);
++         double I_total = (I_end.tv_sec - I_start.tv_sec) + (I_end.tv_usec - I_start.tv_usec) / 1000000.0;
++
++	 printf("The submit time of conv + relu fuse = %f ms\n", I_total * 1000);
++	
+ 
+         compute_ref_conv_relu_fwd<data_t_src, data_t_wei, data_t_wei,
+             data_t_dst>(cd, c_src, c_weights, c_bias, dst_ref, with_bias,

@@ -1,0 +1,82 @@
+diff --git a/cmake/platform.cmake b/cmake/platform.cmake
+index e9e821a..3ab4f6c 100644
+--- a/cmake/platform.cmake
++++ b/cmake/platform.cmake
+@@ -26,6 +26,7 @@ add_definitions(-DMKLDNN_DLL -DMKLDNN_DLL_EXPORTS)
+ # UNIT8_MAX-like macros are a part of the C99 standard and not a part of the
+ # C++ standard (see C99 standard 7.18.2 and 7.18.4)
+ add_definitions(-D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS)
++add_definitions(-DVNNI_ENABLE)
+ 
+ set(CMAKE_CCXX_FLAGS)
+ set(DEF_ARCH_OPT_FLAGS)
+@@ -46,7 +47,7 @@ if(WIN32)
+     set(CTESTCONFIG_PATH "$ENV{PATH}")
+     string(REPLACE ";" "\;" CTESTCONFIG_PATH "${CTESTCONFIG_PATH}")
+ elseif(UNIX OR APPLE)
+-    set(CMAKE_CCXX_FLAGS "${CMAKE_CCXX_FLAGS} -Wall -Werror -Wno-unknown-pragmas")
++    set(CMAKE_CCXX_FLAGS "${CMAKE_CCXX_FLAGS}  -Wall -Wno-unknown-pragmas -Wno-unused-but-set-variable -Wno-unused-variable -Werror -mavx512f -mavx512cd -mavx512vl -mavx512bw -mavx512dq -mavx512vnni")
+     set(CMAKE_CCXX_FLAGS "${CMAKE_CCXX_FLAGS} -fvisibility=internal")
+     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
+     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fvisibility-inlines-hidden")
+diff --git a/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp b/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp
+index a660f20..d24f701 100644
+--- a/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp
++++ b/src/cpu/jit_avx512_core_u8s8s32x_convolution.cpp
+@@ -24,7 +24,7 @@
+ #include "jit_generator.hpp"
+ 
+ #include "jit_avx512_core_u8s8s32x_convolution.hpp"
+-
++#include <immintrin.h> 
+ namespace mkldnn {
+ namespace impl {
+ namespace cpu {
+@@ -351,6 +351,9 @@ int jit_avx512_core_u8s8s32x_conv_fwd_ker_t::get_src_index(int ow_i) {
+ 
+ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute(
+                                Zmm vreg_acc, Zmm vreg_wei, Zmm vreg_src) {
++#ifdef VNNI_ENABLE
++        vpdpbusd(vreg_acc, vreg_src, vreg_wei);
++#else
+         Zmm vreg_t_s16 = vreg_tmp;
+         Zmm vreg_t_s32 = vreg_tmp;
+ 
+@@ -361,8 +364,8 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute(
+         // [1o, 1o, ..., 1o] (16) <-- o + u
+         vpaddd(vreg_acc, vreg_acc, vreg_t_s32);
+ 
++#endif
+ }
+-
+ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t
+     ::compute_part_ur_ow_oc_block_expl_bcast_large_spatial(
+         int ur_ow, int iw_start) {
+diff --git a/src/cpu/jit_transpose_src_utils.cpp b/src/cpu/jit_transpose_src_utils.cpp
+index b941e6d..089a12f 100644
+--- a/src/cpu/jit_transpose_src_utils.cpp
++++ b/src/cpu/jit_transpose_src_utils.cpp
+@@ -347,7 +347,7 @@ void jit_trans_iw_x4_4x_t::generate() {
+         0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, };
+ 
+     const auto &c = *conf_;
+-    const int simd_w = cpu_isa_traits<avx512_common>::vlen / typesize;
++    int simd_w = cpu_isa_traits<avx512_common>::vlen / typesize;
+     const int niters = c.tr_ld / simd_w;
+ 
+     assert(niters <= 4); /* [bwd_w:tr_src:r1] */
+diff --git a/src/cpu/xbyak/xbyak_mnemonic.h b/src/cpu/xbyak/xbyak_mnemonic.h
+index 318af32..9fa2a43 100644
+--- a/src/cpu/xbyak/xbyak_mnemonic.h
++++ b/src/cpu/xbyak/xbyak_mnemonic.h
+@@ -1951,6 +1951,10 @@ void vshuff32x4(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { op
+ void vshuff64x2(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { opAVX_X_X_XM(y1, y2, op, T_66 | T_0F3A | T_YMM | T_MUST_EVEX | T_EW1 | T_B64, 0x23, imm); }
+ void vshufi32x4(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { opAVX_X_X_XM(y1, y2, op, T_66 | T_0F3A | T_YMM | T_MUST_EVEX | T_EW0 | T_B32, 0x43, imm); }
+ void vshufi64x2(const Ymm& y1, const Ymm& y2, const Operand& op, uint8 imm) { opAVX_X_X_XM(y1, y2, op, T_66 | T_0F3A | T_YMM | T_MUST_EVEX | T_EW1 | T_B64, 0x43, imm); }
++void vpdpbusd(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x50); }
++void vpdpbusds(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x51); }
++void vpdpwssd(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x52); }
++void vpdpwssds(const Xmm& x1, const Xmm& x2, const Operand& op) { opAVX_X_X_XM(x1, x2, op, T_66 | T_0F38 | T_EW0 | T_YMM | T_SAE_Z | T_MUST_EVEX | T_B32, 0x53); }
+ #ifdef XBYAK64
+ void kmovq(const Opmask& k, const Reg64& r) { opVex(k, 0, r, T_L0 | T_0F | T_F2 | T_W1, 0x92); }
+ void kmovq(const Reg64& r, const Opmask& k) { opVex(r, 0, k, T_L0 | T_0F | T_F2 | T_W1, 0x93); }

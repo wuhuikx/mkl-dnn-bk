@@ -1,0 +1,46 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../include/mkldnn.h
+mkldnn_types.h
+../include/mkldnn_types.h
+
+../include/mkldnn.hpp
+assert.h
+-
+stdlib.h
+-
+memory
+-
+vector
+-
+algorithm
+-
+iterator
+-
+mkldnn.h
+../include/mkldnn.h
+
+../include/mkldnn_types.h
+stddef.h
+-
+stdint.h
+-
+
+/home/wuhui/mkl-dnn/examples/simple_training_net.cpp
+iostream
+-
+numeric
+-
+math.h
+-
+string
+-
+mkldnn.hpp
+/home/wuhui/mkl-dnn/examples/mkldnn.hpp
+
