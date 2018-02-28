@@ -25,6 +25,7 @@
 
 #include "jit_avx512_core_u8s8s32x_convolution.hpp"
 #include <sys/time.h>
+#include "../../include/mkldnn.hpp"
 
 namespace mkldnn {
 namespace impl {
@@ -88,7 +89,8 @@ struct jit_avx512_core_u8s8s32x_conv_fwd_ker_t: public jit_generator {
     Reg32 reg_src_conv11 = ebx;
     Reg64 reg_ptr_acc_conv11 = r10; 
     Reg64 reg_ptr_wei_conv11 = r15;
-    Reg64 reg_ptr_dst_conv11 = rbp;
+    Reg64 reg_ptr_dst = rbp;
+    //Reg64 reg_ptr_dst_conv11 = rbp;
     //Reg64 reg_oc_conv33 = rdx;    
  
     Zmm vreg_src_bcast_conv11 = zmm25;
@@ -355,7 +357,8 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
                  vmovups(ptr[reg_ptr_acc_conv11 + off *sizeof_acc_dt()], vreg_acc_conv11);
              }else{
                  vmaxps(vreg_acc_conv11, vreg_zero, vreg_acc_conv11);
-                 vmovups(ptr[reg_ptr_dst_conv11 + off *sizeof_dst_dt()], vreg_acc_conv11);
+                 vmovups(ptr[reg_ptr_dst + off *sizeof_dst_dt()], vreg_acc_conv11);
+                 //vmovups(ptr[reg_ptr_dst_conv11 + off *sizeof_dst_dt()], vreg_acc_conv11);
              }
         }
 #else 
@@ -698,7 +701,8 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::generate() {
      READ_PARAM(reg_ptr_scales, scales);
      READ_PARAM(reg_ptr_acc_s32, acc_s32);
      READ_PARAM(reg_kh, kh_range);
-     READ_PARAM(reg_ptr_dst_conv11, dst_conv11);
+     //READ_PARAM(reg_ptr_dst_conv11, dst_conv11);
+     READ_PARAM(reg_ptr_dst, dst_conv11);
      READ_PARAM(reg_ptr_wei_conv11, wei_conv11);
      READ_PARAM(reg_ptr_acc_conv11, acc_conv11);
  #   undef READ_PARAM
@@ -897,6 +901,77 @@ status_t jit_avx512_core_u8s8s32x_conv_fwd_ker_t::init_conf(jit_conv_conf_t &c,
 
 /*****************************************************************************/
 
+template <typename data_t>
+static inline data_t set_value(size_t index, data_t mean, data_t deviation,
+        double sparsity)
+{
+    if (data_traits<data_t>::data_type == mkldnn::memory::data_type::f32) {
+        const size_t group_size = (size_t)(1. / sparsity);
+        const size_t group = index / group_size;
+        const size_t in_group = index % group_size;
+        const bool fill = in_group == ((group % 1637) % group_size);
+        return fill ? static_cast<data_t>(mean + deviation * sinf(float(index % 37)))
+            : data_t{0};
+    } else if (data_traits<data_t>::data_type == mkldnn::memory::data_type::s32
+        || data_traits<data_t>::data_type == mkldnn::memory::data_type::s16
+        || data_traits<data_t>::data_type == mkldnn::memory::data_type::s8) {
+        return data_t(rand() % 21 - 10);
+    } else if (data_traits<data_t>::data_type == mkldnn::memory::data_type::u8) {
+        return data_t(rand() % 17);
+    } else {
+        return data_t(0);
+    }
+}
+
+template <typename data_t>
+static void fill_data(const size_t size, data_t *data, double sparsity = 1.,
+        bool init_negs = false)
+{
+#   pragma omp parallel for schedule(static)
+    for (size_t n = 0; n < size; n++) {
+        data[n] = set_value<data_t>(n, data_t(1), data_t(2e-1), sparsity);
+
+        if (init_negs && n%4 == 0U)
+            data[n] = static_cast<data_t>(-data[n]); // weird for unsigned types!
+    }
+}
+/*
+static inline wei_data_t set_value(size_t index, data_type_t mean, data_type_t deviation,
+        double sparsity)
+{
+    if (data_traits<data_type_t>::data_type == mkldnn::memory::data_type::f32) {
+        const size_t group_size = (size_t)(1. / sparsity);
+        const size_t group = index / group_size;
+        const size_t in_group = index % group_size;
+        const bool fill = in_group == ((group % 1637) % group_size);
+        return fill ? static_cast<data_type_t>(mean + deviation * sinf(float(index % 37)))
+            : data_t{0};
+    } else if (data_traits<data_type_t>::data_type == mkldnn::memory::data_type::s32
+        || data_traits<data_type_t>::data_type == mkldnn::memory::data_type::s16
+        || data_traits<data_type_t>::data_type == mkldnn::memory::data_type::s8) {
+        return data_type_t(rand() % 21 - 10);
+    } else if (data_traits<data_type_t>::data_type == mkldnn::memory::data_type::u8) {
+        return data_type_t(rand() % 17);
+    } else {
+        return data_type_t(0);
+    }
+}
+
+static void fill_data(const size_t size, wei_data_t *data, double sparsity = 1.,
+        bool init_negs = false)
+{
+#   pragma omp parallel for schedule(static)
+    for (size_t n = 0; n < size; n++) {
+        data[n] = set_value(n, wei_data_t(1), wei_data_t(2e-1), sparsity);
+
+        if (init_negs && n%4 == 0U)
+            data[n] = static_cast<wei_data_t>(-data[n]); // weird for unsigned types!
+    }
+}
+*/
+/*****************************************************************************/
+
+
 template <bool with_relu, data_type_t dst_data_type>
 status_t _jit_avx512_core_u8s8s32x_convolution_fwd_t<with_relu,
          dst_data_type>::pd_t::jit_conf()
@@ -931,6 +1006,16 @@ _jit_avx512_core_u8s8s32x_convolution_fwd_t(const pd_t *pd,
     ws_conv11_memory = (acc_data_t*)malloc(nthreads * ws_per_thread_conv11 * sizeof(acc_data_t), 64);
     wei_conv11_memory = (wei_data_t *)malloc(oc_conv11 * conf_.jcp_.oc * sizeof(wei_data_t), 64);
     dst_conv11_memory = (dst_data_t *)malloc(conf_.jcp_.mb * conf_.jcp_.oh * conf_.jcp_.ow * oc_conv11 * sizeof(dst_data_t), 64);
+
+
+     fill_data<wei_data_t>(oc_conv11 * conf_.jcp_.oc, wei_conv11_memory);
+     /*wei_data_t *wei_conv11_memory_tmp = wei_conv11_memory;
+     printf("weight value 2 = %d \n", int(*wei_conv11_memory_tmp));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+1)));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+2)));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+3)));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+4)));
+*/
 #endif
 }
 
@@ -951,8 +1036,15 @@ execute_forward() {
     auto bia = reinterpret_cast<const char *>(input_memory(2));
     auto dst = reinterpret_cast<dst_data_t *>(memory(0));
 #ifdef CONV11_FUSE
-    auto wei_conv11 = reinterpret_cast<const wei_data_t *>(wei_conv11_memory);
+    auto wei_conv11 = reinterpret_cast<wei_data_t *>(wei_conv11_memory);
     auto dst_conv11 = reinterpret_cast<dst_data_t *>(dst_conv11_memory);
+     
+     wei_data_t *wei_conv11_memory_tmp = wei_conv11_memory;
+     printf("weight value 2 = %d \n", int(*wei_conv11_memory_tmp));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+1)));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+2)));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+3)));
+     printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+4)));
 #endif
     const memory_desc_wrapper src_d(conf_.src_pd());
     const memory_desc_wrapper wei_d(conf_.weights_pd(0));

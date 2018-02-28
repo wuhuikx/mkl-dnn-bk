@@ -107,12 +107,26 @@ protected:
         auto eng = engine(p.engine_kind, 0);
         float negative_slope = p.relu_negative_slope;
 
+        // create datatype
         memory::data_type data_type_src = data_traits<data_t_src>::data_type;
         memory::data_type data_type_dst = data_traits<data_t_dst>::data_type;
         memory::data_type data_type_wei = data_traits<data_t_wei>::data_type;
 
         test_convolution_sizes_t cd = p.sizes;
 
+        int oc_conv11 = 96;
+        int kh = 0, kw = 0;
+        int padh = 0, padw = 0;
+        int strh = 0, strw = 0;
+        test_convolution_sizes_t cd_conv11(cd.mb, 
+                                           cd.ng,
+                                           cd.oc, cd.oh, cd.ow,
+                                           oc_conv11, cd.oh, cd.ow,
+                                           kh, kw,
+                                           padh, padw,
+                                           strh, strw );
+
+        // create memory descriptor
         auto c_src_desc = create_md({ cd.mb, cd.ic, cd.ih, cd.iw },
                 data_type_src, p.formats.src_format);
         auto c_weights_desc = cd.ng > 1 ?
@@ -120,15 +134,35 @@ protected:
                         data_type_wei, p.formats.weights_format) :
                 create_md({ cd.oc, cd.ic, cd.kh, cd.kw },
                         data_type_wei, p.formats.weights_format);
-        auto c_dst_desc = create_md({ cd.mb, cd.oc, cd.oh, cd.ow },
+       // auto c_dst_desc = create_md({ cd.mb, cd.oc, cd.oh, cd.ow },
+       //         data_type_dst, p.formats.dst_format);
+       auto c_dst_desc = create_md({ cd.mb, oc_conv11, cd.oh, cd.ow },
                 data_type_dst, p.formats.dst_format);
 
+
+#ifdef CONV11_FUSE
+        auto c_weights_desc_conv11 = cd.ng > 1 ?
+                create_md({ cd.ng, oc_conv11 / cd.ng, cd.oc / cd.ng, kh, kw},
+                        data_type_wei, p.formats.weights_format) :
+                create_md({ oc_conv11, cd.oc, kh, kw},
+                        data_type_wei, p.formats.weights_format);
+        auto c_dst_desc_conv11 = create_md({cd.mb, oc_conv11, cd.oh, cd.ow},
+                data_type_dst, p.formats.dst_format);
+#endif
+
+        // create user memory
         auto c_src = memory({c_src_desc, eng});
         auto c_weights = memory({c_weights_desc, eng});
         auto c_dst = memory({c_dst_desc, eng});
 
         auto dst_ref = memory({c_dst_desc, eng});
 
+#ifdef CONV11_FUSE
+        auto c_weights_conv11 = memory({c_weights_desc_conv11, eng});
+        auto dst_ref_conv11 = memory({c_dst_desc_conv11, eng});
+#endif
+
+        // fill data
         fill_data<data_t_src>(c_src.get_primitive_desc().get_size()
                 / sizeof(data_t_src), (data_t_src *)c_src.get_data_handle());
         // TODO: Temporary workaround for testing of convolution + relu
@@ -141,10 +175,25 @@ protected:
         }
 
         fill_data<data_t_wei>(
-                c_weights.get_primitive_desc().get_size()
-                / sizeof(data_t_wei),(data_t_wei *)c_weights.get_data_handle());
+                c_weights.get_primitive_desc().get_size() / sizeof(data_t_wei),
+                (data_t_wei *)c_weights.get_data_handle());
+
+#ifdef CONV11_FUSE
+        fill_data<data_t_wei>(
+                c_weights_conv11.get_primitive_desc().get_size() / sizeof(data_t_wei),
+                (data_t_wei *)c_weights_conv11.get_data_handle());
+     
+        data_t_wei *wei_conv11_memory_tmp = (data_t_wei *)c_weights_conv11.get_data_handle();
+        printf("weight value 1 = %d \n", int(*wei_conv11_memory_tmp));
+        printf("weight value 1 = %d \n", int(*(wei_conv11_memory_tmp+1)));
+        printf("weight value 1 = %d \n", int(*(wei_conv11_memory_tmp+2)));
+        printf("weight value 1 = %d \n", int(*(wei_conv11_memory_tmp+3)));
+        printf("weight value 1 = %d \n", int(*(wei_conv11_memory_tmp+4)));
+#endif
 
         bool with_bias = p.formats.bias_format != memory::format::format_undef;
+        //with_bias = false;
+
         auto c_bias_desc = with_bias ?
                 create_md({ cd.oc }, data_type_dst, p.formats.bias_format) :
                 create_md({}, data_type_dst, p.formats.bias_format);
@@ -155,6 +204,7 @@ protected:
                     (data_t_dst *)c_bias.get_data_handle(), 1., true);
         }
 
+        
         std::vector<int> padR = { cd.padh, cd.padw };
         for (int i = 0; i < 2; ++i) {
             if ((cd.ih - ((cd.kh - 1) * (cd.dilh + 1) + 1) + cd.padh + padR[0])
@@ -165,6 +215,7 @@ protected:
                 ++padR[1];
         }
 
+        // create a convolution
         auto conv_desc = with_bias ?
                 convolution_forward::desc(prop_kind::forward_scoring,
                         p.aalgorithm, c_src_desc, c_weights_desc, c_bias_desc,
@@ -190,7 +241,7 @@ protected:
 
          struct timeval I_start, I_end;
          gettimeofday(&I_start, NULL);
-         stream(stream::kind::lazy).submit(pipeline).wait();
+        // stream(stream::kind::lazy).submit(pipeline).wait();
          gettimeofday(&I_end, NULL);
          double I_total = (I_end.tv_sec - I_start.tv_sec) + (I_end.tv_usec - I_start.tv_usec) / 1000000.0;
 	 printf("The submit time  = %f ms\n", I_total * 1000);
@@ -224,11 +275,19 @@ protected:
              printf("The mean time = %f ms\n", conv33_time / conv33_count + conv11_time     / conv11_count);
           }
 #endif
-        /*
+        
         compute_ref_conv_relu_fwd<data_t_src, data_t_wei, data_t_wei,
             data_t_dst>(cd, c_src, c_weights, c_bias, dst_ref, with_bias,
             negative_slope);
-        compare_data<data_t_dst>(dst_ref, c_dst);*/
+        printf("with_bias = %d \n", with_bias);
+        printf("negative_slope = %f \n", negative_slope);
+    
+#ifdef CONV11_FUSE
+        compute_ref_conv_relu_fwd<data_t_src, data_t_wei, data_t_wei, 
+            data_t_dst>(cd_conv11, dst_ref, c_weights_conv11, c_bias, dst_ref_conv11,
+            with_bias, negative_slope);
+#endif
+        compare_data<data_t_dst>(dst_ref_conv11, c_dst);
     }
 };
 
