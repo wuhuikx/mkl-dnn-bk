@@ -89,8 +89,7 @@ struct jit_avx512_core_u8s8s32x_conv_fwd_ker_t: public jit_generator {
     Reg32 reg_src_conv11 = ebx;
     Reg64 reg_ptr_acc_conv11 = r10; 
     Reg64 reg_ptr_wei_conv11 = r15;
-    Reg64 reg_ptr_dst = rbp;
-    //Reg64 reg_ptr_dst_conv11 = rbp;
+    Reg64 reg_ptr_dst_conv11 = rbp;
     //Reg64 reg_oc_conv33 = rdx;    
  
     Zmm vreg_src_bcast_conv11 = zmm25;
@@ -357,8 +356,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
                  vmovups(ptr[reg_ptr_acc_conv11 + off *sizeof_acc_dt()], vreg_acc_conv11);
              }else{
                  vmaxps(vreg_acc_conv11, vreg_zero, vreg_acc_conv11);
-                 vmovups(ptr[reg_ptr_dst + off *sizeof_dst_dt()], vreg_acc_conv11);
-                 //vmovups(ptr[reg_ptr_dst_conv11 + off *sizeof_dst_dt()], vreg_acc_conv11);
+                 vmovups(ptr[reg_ptr_dst_conv11 + off *sizeof_dst_dt()], vreg_acc_conv11);
              }
         }
 #else 
@@ -701,8 +699,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::generate() {
      READ_PARAM(reg_ptr_scales, scales);
      READ_PARAM(reg_ptr_acc_s32, acc_s32);
      READ_PARAM(reg_kh, kh_range);
-     //READ_PARAM(reg_ptr_dst_conv11, dst_conv11);
-     READ_PARAM(reg_ptr_dst, dst_conv11);
+     READ_PARAM(reg_ptr_dst_conv11, dst_conv11);
      READ_PARAM(reg_ptr_wei_conv11, wei_conv11);
      READ_PARAM(reg_ptr_acc_conv11, acc_conv11);
  #   undef READ_PARAM
@@ -1036,7 +1033,7 @@ execute_forward() {
     auto bia = reinterpret_cast<const char *>(input_memory(2));
     auto dst = reinterpret_cast<dst_data_t *>(memory(0));
 #ifdef CONV11_FUSE
-    auto wei_conv11 = reinterpret_cast<wei_data_t *>(wei_conv11_memory);
+    auto wei_conv11 = reinterpret_cast<const wei_data_t *>(wei_conv11_memory);
     auto dst_conv11 = reinterpret_cast<dst_data_t *>(dst_conv11_memory);
      
      wei_data_t *wei_conv11_memory_tmp = wei_conv11_memory;

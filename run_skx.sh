@@ -5,6 +5,9 @@ export KMP_AFFINITY="granularity=fine,compact,0,0"
 #export KMP_AFFINITY="explicit,1,0,granularity=fine, proclist=[28-55]"
 #cpupower frequency-set -g performance 
 
+cd build
+make -j `nproc`
+cd ..
 
 #./build/tests/gtests/test_convolution_relu_forward_u8s8s32>log.txt 2>1&
 
