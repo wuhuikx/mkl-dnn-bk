@@ -26,7 +26,8 @@ INST_TEST_CASE(ResNet_Blocked_part1,
 #ifdef CONV11_FUSE
 INST_TEST_CASE(ResNet_Blocked_part1,
     PARAMS_ATTR(nhwc, FMT_WEIGHTS_BLOCKED16, FMT_BIAS, nhwc,round_nearest, 0.3f, COMMON,
-        2,  1,  32,    258,   258,   64,   256,   256,   3,  3,  0,  0,  1,  1)
+        2,  1,  32,    5,   5,   96,   3,   3,   3,  3,  0,  0,  1,  1)
+        //2,  1,  32,    258,   258,   64,   256,   256,   3,  3,  0,  0,  1,  1)
 );
 #endif
 

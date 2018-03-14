@@ -113,6 +113,7 @@ private:
     wei_data_t *wei_conv11_memory;
     acc_data_t *ws_conv11_memory;
     dst_data_t *dst_conv11_memory;
+    acc_data_t *acc_conv11_memory;
 };
 
 }

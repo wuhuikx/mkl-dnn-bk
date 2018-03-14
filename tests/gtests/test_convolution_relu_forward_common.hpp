@@ -325,8 +325,12 @@ protected:
         printf("\n");
         
         data_t_dst *dst_ref_tmp1 = (data_t_dst *)dst_ref.get_data_handle();
-        for (int i = 0; i < 64; ++i)
-             printf("dst conv3x3 ref = %d \n", int(*(dst_ref_tmp1 + i)));
+        for (int j = 0; j < 3; ++j){
+        for (int i = 0; i < 96; ++i)
+             printf("dst conv3x3 ref = %d \n", int(*(dst_ref_tmp1 + i + j *96)));
+        printf("\n");
+    
+        }
         printf("\n");
 
 
@@ -338,13 +342,16 @@ protected:
         net_ref.push_back(reorder(dst_ref, c_src_conv11));
         stream(stream::kind::eager).submit(net_ref).wait();
 
-        int total = int(0);
         data_t_src *c_src_conv11_ptr = (data_t_src *)c_src_conv11.get_data_handle();
-        for (int i = 0; i < 64; ++i){
-            printf("src conv1x1 ref = %d \n", int(*(c_src_conv11_ptr + i)));
-            total += int(*(c_src_conv11_ptr + i));
+        for (int j = 0; j < 9; ++j){
+             int total = int(0);
+             for (int i = 0; i < 96; ++i){
+                  printf("src conv1x1 ref = %d \n", int(*(c_src_conv11_ptr + i + j * 96)));
+                  total += int(*(c_src_conv11_ptr + i + j * 96));
+             }
+             printf("\n");
+             printf("total = %d\n", int(total));
         }
-        printf("total = %d\n", int(total *2));
 
 
         // 3 conv1x1 convolution reference
