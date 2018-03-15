@@ -85,7 +85,7 @@ struct jit_avx512_core_u8s8s32x_conv_fwd_ker_t: public jit_generator {
     Reg64 reg_off_dst = r10;
     Reg64 reg_ptr_dst = r15;
 #else
-    //Reg32 reg_src_conv11 = ebx;
+    Reg32 reg_src_conv11 = reg_ptr_bia.cvt32();
     Reg64 reg_ptr_acc_conv11 = r10;
     Reg64 reg_ptr_wei_conv11 = r15;
     Reg64 reg_ptr_dst_conv11 = rbp;
@@ -95,6 +95,8 @@ struct jit_avx512_core_u8s8s32x_conv_fwd_ker_t: public jit_generator {
     Zmm vreg_src_bcast_conv11 = zmm25;
     Zmm vreg_wei_conv11 = zmm26;
     Zmm vreg_acc_conv11 = zmm27;
+
+    Xmm vreg_src_conv11_tmp = xmm25;
 
     void load_wei_conv11(int ic_conv11_idx, int oc_conv11_idx);
     //void load_acc_conv11(int ow_step_idx, int ic_conv11_idx);
@@ -209,8 +211,9 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::load_wei_conv11(int ic_conv11_idx,
     // weight format: [oc/16][ic/4][16o][4i]
     assert(c_.oc_block * c_.ic_block * sizeof_wei_dt()
             == cpu_isa_traits<avx512_core>::vlen);
-    int off = oc_conv11_idx * c_.oc * c_.oc_block + ic_conv11_idx * c_.oc_block * c_.ic_block;
-    vmovups(vreg_wei_conv11, ptr[reg_ptr_wei_conv11 + off * sizeof_wei_dt()]);
+    int off = oc_conv11_idx * c_.oc_block * c_.oc + ic_conv11_idx * c_.oc_block * c_.ic_block;
+    //vmovups(vreg_wei_conv11, ptr[reg_ptr_wei_conv11 + off * sizeof_wei_dt()]);
+    vmovups(vreg_wei_conv11, ptr[reg_ptr_wei_conv11]);
 }
 #endif
 
@@ -264,7 +267,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
     vmovups(vreg_scales, zword[reg_ptr_scales]);
 
 
-    printf("with_bias = %d\n", c_.with_bias);
+    //printf("with_bias = %d\n", c_.with_bias);
     auto vreg_bia = vreg_tmp;
     if (c_.with_bias) {
         switch (c_.bia_dt) {
@@ -303,7 +306,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
 
         //printf("sum_idx = %d\n", sum_idx);
 #ifndef CONV11_FUSE       
-        Address dst = ptr[reg_ptr_dst + reg_off_dst
+        Address dst = ptr[reg_ptr_dst + reg_off_dst * sizeof_dst_dt()
             + o * c_.ngroups * c_.oc * sizeof_dst_dt()];
         if (sum_idx != -1) {
             auto vreg_prev_dst = vreg_zero; // reuse register w/ zeros... 
@@ -348,42 +351,43 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
 
         for (int oc_conv11 = 0; oc_conv11 < c_.oc_nb1_conv11; ++ oc_conv11){
              vpmovusdb(Xmm(30), Zmm(r)); //Xmm(30) = vreg_zero
-                
-              Address addr_dst_conv11 = ptr[reg_ptr_dst_conv11 + reg_off_dst
-                    + o * c_.ngroups * c_.oc * sizeof_src_dt()]; 
+              
+             //Address addr_dst_conv11 = ptr[reg_ptr_dst_conv11 + reg_off_dst * sizeof_src_dt()
+             //       + o * c_.ngroups * c_.oc * sizeof_src_dt()]; 
+            /*
             // write the first 16oc of Conv3x3 output (s8)
             if (oc_conv11 == 0){
                 vmovups(addr_dst_conv11, Xmm(30));
-            }
+            }*/
 
-             // Address addr_acc_conv11 = ptr[reg_ptr_acc_conv11 + reg_ptr_bia
-            //        + o * c_.ngroups * c_.oc * sizeof_acc_dt()]; 
-            Address addr_acc_conv11 = ptr[reg_ptr_acc_conv11 + reg_ptr_bia
-                    + o * c_.ngroups * c_.oc * sizeof_acc_dt() + oc_conv11 * c_.oc_block * sizeof_acc_dt()]; 
-             
+            Address addr_acc_conv11 = ptr[reg_ptr_acc_conv11 + reg_off_dst * sizeof_acc_dt()
+                   + o * c_.ngroups * c_.oc * sizeof_acc_dt() + oc_conv11 * c_.oc_block * sizeof_acc_dt()]; 
+   
              // acc: [ow][oc_nb1_conv11][16]
              //load_acc_conv11(ow_step_idx + o, oc_conv11);
-            load_acc_conv11(addr_acc_conv11);
-           // Reg32 reg_src_conv11 = reg_ic_b2.cvt32();
-
+             load_acc_conv11(addr_acc_conv11);
+            
+             //Reg32 reg_src_conv11 = reg_ic_b2.cvt32();
              for (int part=0; part < 4; ++part){
-                 // movd(reg_src_conv11, Xmm(30));
-                 // psrldq( Xmm(30), 4);
+                    
+                 vpsrldq(vreg_src_conv11_tmp, Xmm(30), part * 4);
+                 vpextrd(reg_src_conv11, vreg_src_conv11_tmp, 8);  // get 4u8 from index id
+                 //movd(reg_src_conv11, Xmm(30));
+                 //psrldq( Xmm(30), 4);
+                 //vpextrd(reg_src_conv11, Xmm(30), 8);  // get 4u8 from index id
                  //pextrd(reg_1x1_src_4u8, xmm, id);  // get 4u8 from index id
+                 
 
-                 Address addr_dst_conv11 = ptr[reg_ptr_dst_conv11 + reg_off_dst
-                    + o * c_.ngroups * c_.oc * sizeof_src_dt() + part * 4 * sizeof_src_dt()]; 
-                 //vpbroadcastd(vreg_src_bcast_conv11, reg_src_conv11);
-                 vpbroadcastd(vreg_src_bcast_conv11, addr_dst_conv11);
+                 //Address addr_dst_conv11 = ptr[reg_ptr_dst_conv11 + reg_off_dst * sizeof_src_dt()
+                 //   + o * c_.ngroups * c_.oc * sizeof_src_dt() + part * 4 * sizeof_src_dt()]; 
+                 vpbroadcastd(vreg_src_bcast_conv11, reg_src_conv11);
+                 //vpbroadcastd(vreg_src_bcast_conv11, addr_dst_conv11);
                   
-                  // weight can be treated as: [oc/16][ic/16][4][16o][4i] 
-                 // int ic_conv11 = oc_conv33_idx * 4 + part;
-                 // load_wei_conv11(ic_conv11, oc_conv11);
-                 // compute(vreg_acc_conv11, vreg_wei_conv11, vreg_src_bcast_conv11);
+                 // weight can be treated as: [oc/16][ic/16][4][16o][4i] 
+                  int ic_conv11 = oc_conv33_idx * 4 + part;
+                  load_wei_conv11(ic_conv11, oc_conv11);
                  
-                  //vpxord(vreg_acc_conv11, vreg_acc_conv11, vreg_acc_conv11); // restore zeros 
-                 
-                 //compute(vreg_acc_conv11, vreg_wei_conv11, vreg_src_bcast_conv11);
+                  // compute(vreg_acc_conv11, vreg_wei_conv11, vreg_src_bcast_conv11);
                  
                   Zmm vreg_t_s16 = vreg_tmp;  //vreg_tmp=zmm29;
                   Zmm vreg_t_s32 = vreg_tmp;
@@ -401,7 +405,6 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
                   //vmovups(addr_acc_conv11, vreg_acc_conv11);
                   
              } // end for part
-             //vmovups(addr_acc_conv11, vreg_acc_conv11);
           
              if (oc_conv33_idx < c_.oc_nb1 -1){
                  vmovups(addr_acc_conv11, vreg_acc_conv11);
@@ -411,6 +414,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
                  vmovups(addr_acc_conv11, vreg_acc_conv11);
                  //vmovups(ptr[reg_ptr_dst_conv11 + off *sizeof_dst_dt()], vreg_acc_conv11);
              }
+          
         } // end for oc_conv11
 
 
@@ -433,8 +437,8 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::store_dst(int ur_ow) {
 
 //#ifndef CONV11_FUSE
     //add(reg_off_dst, ur_ow * c_.ngroups * c_.oc * sizeof_dst_dt());
-    add(reg_off_dst, ur_ow * c_.ngroups * c_.oc * sizeof_src_dt());
-    add(reg_ptr_bia, ur_ow * c_.ngroups * c_.oc * sizeof_acc_dt());
+    add(reg_off_dst, ur_ow * c_.ngroups * c_.oc);
+    //add(reg_ptr_bia, ur_ow * c_.ngroups * c_.oc * sizeof_acc_dt());
 
 //#endif
 
@@ -645,9 +649,9 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute_part_ow_oc_block() {
     const int ow_tail_start = c_.ur_ow_nsteps * c_.ur_ow;
     const int iw_tail_start = ow_tail_start * c_.stride_w;
 
-    printf("ur_ow = %d\n", c_.ur_ow);
-    printf("ur_ow_nsteps = %d\n", c_.ur_ow_nsteps);
-    printf("ur_ow_tail = %d\n", c_.ur_ow_tail);
+   // printf("ur_ow = %d\n", c_.ur_ow);
+   // printf("ur_ow_nsteps = %d\n", c_.ur_ow_nsteps);
+   // printf("ur_ow_tail = %d\n", c_.ur_ow_tail);
     
     load_wei_s8();
 
@@ -655,7 +659,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute_part_ow_oc_block() {
     xor_(reg_off_acc_s32, reg_off_acc_s32);
 //#ifndef CONV11_FUSE    
     xor_(reg_off_dst, reg_off_dst);
-    xor_(reg_ptr_bia, reg_ptr_bia);
+    //xor_(reg_ptr_bia, reg_ptr_bia);
 //#endif
     ow_step_idx = 0;
     Label l_ur_ow_step;
@@ -715,6 +719,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::compute_ow_oc_block() {
     mov(reg_tmp2, 3);
     vpbroadcastb(vreg_src_bcast_conv11, reg_tmp2); //vreg_wei_conv11 = zmm26;
 
+     
     xor_(reg_state, reg_state);
     or_(reg_state, STATE_FIRST_DST_LOAD);
 
@@ -782,7 +787,7 @@ void jit_avx512_core_u8s8s32x_conv_fwd_ker_t::generate() {
      add(reg_ptr_wei_s8, oc_conv33_idx *c_.ic * c_.kh * c_.kw * c_.oc_block * sizeof_wei_dt());
      //add(reg_ptr_dst_conv11, oc_conv33_idx * c_.oc_block * sizeof_dst_dt());
      add(reg_ptr_dst_conv11, oc_conv33_idx * c_.oc_block * sizeof_src_dt());
-     //add(reg_ptr_acc_conv11, oc_conv33_idx * c_.oc_block * sizeof_acc_dt());
+     //add(reg_ptr_acc_conv11, oc_conv33_idx * c_.oc_block * sizeof_src_dt());
      compute_ow_oc_block();
  }
 
@@ -1002,7 +1007,7 @@ static inline data_t set_value(size_t index, data_t mean, data_t deviation,
 }
 
 template <typename data_t>
-static void fill_data(const size_t size, data_t *data, double sparsity = 1.,
+static void fill_data_wei(const size_t size, data_t *data, double sparsity = 1.,
         bool init_negs = false)
 {
 #   pragma omp parallel for schedule(static)
@@ -1087,7 +1092,7 @@ _jit_avx512_core_u8s8s32x_convolution_fwd_t(const pd_t *pd,
     acc_conv11_memory = (acc_data_t *)malloc(conf_.jcp_.mb * conf_.jcp_.oh * conf_.jcp_.ow * oc_conv11 * sizeof(acc_data_t), 64);
 
 
-     fill_data<wei_data_t>(oc_conv11 * conf_.jcp_.oc, wei_conv11_memory);
+   //  fill_data_wei<wei_data_t>(oc_conv11 * conf_.jcp_.oc, wei_conv11_memory);
      /*wei_data_t *wei_conv11_memory_tmp = wei_conv11_memory;
      printf("weight value 2 = %d \n", int(*wei_conv11_memory_tmp));
      printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+1)));
@@ -1124,11 +1129,12 @@ execute_forward() {
     //auto acc_conv11 = reinterpret_cast<acc_data_t *>(ws_conv11_memory);
      
      wei_data_t *wei_conv11_memory_tmp = wei_conv11_memory;
-     printf("weight value 2 = %d \n", int(*wei_conv11_memory_tmp));
+/*     printf("weight value 2 = %d \n", int(*wei_conv11_memory_tmp));
      printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+1)));
      printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+2)));
      printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+3)));
      printf("weight value 2 = %d \n", int(*(wei_conv11_memory_tmp+4)));
+*/
 #endif
     const memory_desc_wrapper src_d(conf_.src_pd());
     const memory_desc_wrapper wei_d(conf_.weights_pd(0));
@@ -1207,26 +1213,26 @@ execute_forward() {
     {
         ker(omp_get_thread_num(), omp_get_num_threads());
     }
-     const wei_data_t *wei_memory_tmp = wei_conv11;
+/*     const wei_data_t *wei_memory_tmp = wei_conv11;
      for (int i = 0; i < 96; ++i)
           printf("wei conv1x1 = %d \n", int(*(wei_memory_tmp + i )));
      printf("\n");
-     
+*/     
 /*     const src_data_t *src_memory_tmp = src_u8;
      for (int i = 0; i < 64; ++i)
           printf("src conv1x1 = %d \n", int(*(src_memory_tmp + i )));
      printf("\n");
 */
      //dst_data_t *dst_memory_tmp = dst_conv11;
-     src_data_t *dst_memory_tmp = dst_conv11;
-     for (int j = 0; j < 3; ++j){
+ /*    src_data_t *dst_memory_tmp = dst_conv11;
+     for (int j = 0; j < 9; ++j){
          for (int i = 0; i < 96; ++i){
                //printf("index = %d\n", i);
                printf("dst conv3x3 = %d \n", int(*(dst_memory_tmp + i +j*96)));
          } 
-          printf("\n");
-         
+          printf("\n");       
      }
+*/
 /*     src_data_t *acc_memory_tmp = acc_conv11;
      for (int j = 0; j < 3; ++j){
          for (int i = 0; i < 96; ++i){
@@ -1245,12 +1251,15 @@ execute_forward() {
      printf("\n");
      }*/
 
-     acc_data_t *acc_memory_tmp = (acc_data_t *)acc_conv11;
+  /*   acc_data_t *acc_memory_tmp = (acc_data_t *)acc_conv11;
+     //wei_data_t *acc_memory_tmp = (wei_data_t *)acc_conv11;
+     //src_data_t *acc_memory_tmp = (src_data_t *)acc_conv11;
      for (int j = 0; j < 9; ++j){
          for (int i = 0; i < 96; ++i)
               printf("acc conv3x3 = %d \n", int(*(acc_memory_tmp + i + j * 96)));
          printf("\n");
      }
+   */
 }
 
 template struct _jit_avx512_core_u8s8s32x_convolution_fwd_t<true, data_type::s8>;
